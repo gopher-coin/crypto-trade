@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type TickerPrice struct {
@@ -12,42 +14,102 @@ type TickerPrice struct {
 	Price  string `json:"price"`
 }
 
-func GetTickerPrice(prices []TickerPrice, value string) (string, error) {
-	value = strings.ToUpper(value)
-	for _, ticker := range prices {
-		if ticker.Symbol == value {
-			return ticker.Price, nil
-		}
-	}
-	return "", fmt.Errorf("symbol %s not found", value)
+type errorResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
 }
 
-func main() {
-	url := "https://api.binance.com/api/v3/ticker/price"
+func BuildPriceMap(prices []TickerPrice) (map[string]string, error) {
+	if len(prices) == 0 {
+		return nil, fmt.Errorf("input price list is empty")
+	}
+	pricesMap := make(map[string]string)
+	for _, ticker := range prices {
+		pricesMap[ticker.Symbol] = ticker.Price
+	}
+	return pricesMap, nil
+}
 
+func GetTickerPrice(pricesMap map[string]string, value string) (string, error) {
+	price, ok := pricesMap[strings.ToUpper(value)]
+	if !ok {
+		return "", fmt.Errorf("symbol %s not found", value)
+	}
+	return price, nil
+}
+
+func FetchBinanceDataWithErrors(url string) ([]byte, error) {
 	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Printf("Error fetching data: %v\n", err)
-		return
+		return nil, fmt.Errorf("failed to send request: %w\n", err)
 	}
 	defer resp.Body.Close()
 
-	var prices []TickerPrice
-	if err := json.NewDecoder(resp.Body).Decode(&prices); err != nil {
-		fmt.Printf("Error decoding response data: %v\n", err)
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		var apiError errorResponse
+		if err := json.Unmarshal(body, &apiError); err == nil && apiError.Msg != "" {
+			return nil, fmt.Errorf("API error %d: %s", apiError.Code, apiError.Msg)
+		}
+		return nil, fmt.Errorf("HTTP error %d: %s\n", resp.StatusCode, http.StatusText(resp.StatusCode))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w\n", err)
+	}
+
+	return body, nil
+}
+
+func FetchBinanceDataWithRetry(url string, maxRetries int, retryDelay time.Duration) ([]byte, error) {
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		body, err := FetchBinanceDataWithErrors(url)
+		if err == nil {
+			return body, nil
+		}
+		if strings.Contains(err.Error(), "HTTP error 5") {
+			lastErr = err
+			fmt.Printf("Retry %d/%d: %s\n", i+1, maxRetries, err)
+			time.Sleep(retryDelay)
+			continue
+		}
+		return nil, err
+	}
+	return nil, fmt.Errorf("all retries failed: %w", lastErr)
+}
+
+func main() {
+
+	url := "https://api.binance.com/api/v3/ticker/price"
+	//url := "https://httpbin.org/status/500"
+
+	body, err := FetchBinanceDataWithRetry(url, 3, 2*time.Second)
+	if err != nil {
+		fmt.Println("Error:", err)
 		return
 	}
 
-	for i, ticker := range prices {
-		if i >= 5 {
-			break
-		}
-		fmt.Printf("%s: %s\n", ticker.Symbol, ticker.Price)
-	}
-	btcUsdt, err := GetTickerPrice(prices, "BTCUSDT")
-	if err != nil {
-		fmt.Printf("Error fetching data: %v\n", err)
+	// fmt.Println("Response body:", string(body[:200]))
+
+	var prices []TickerPrice
+	if err := json.Unmarshal(body, &prices); err != nil {
+		fmt.Printf("Failed to decode prices: %v\n", err)
 		return
 	}
-	fmt.Println(btcUsdt)
+
+	priceMap, err := BuildPriceMap(prices)
+	if err != nil {
+		fmt.Println("error buiding price map:", err)
+		return
+	}
+
+	symbol := "BTCUSDT"
+	price, err := GetTickerPrice(priceMap, symbol)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Printf("Price for %s: %s\n", symbol, price)
+	}
 }
