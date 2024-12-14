@@ -1,106 +1,19 @@
 package main
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/joho/godotenv"
+	"github.com/gopher-coin/crypto-trade/internal/config"
+	"github.com/gopher-coin/crypto-trade/internal/exchanges/binance"
+	"github.com/gopher-coin/crypto-trade/pkg/models"
 )
 
-type Config struct {
-	APIKey    string
-	SecretKey string
-	BaseURL   string
-}
-
-type TickerPrice struct {
-	Symbol string `json:"symbol"`
-	Price  string `json:"price"`
-}
-
-type errorResponse struct {
-	Code int    `json:"code"`
-	Msg  string `json:"msg"`
-}
-
-func loadConfig() (*Config, error) {
-	if err := godotenv.Load(); err != nil {
-		fmt.Println("Warning: No .env file found")
-	}
-
-	env := os.Getenv("BINANCE_ENV")
-
-	if env == "LIVE" {
-		return &Config{
-			APIKey:    os.Getenv("LIVE_BINANCE_API_KEY"),
-			SecretKey: os.Getenv("LIVE_BINANCE_SECRET_KEY"),
-			BaseURL:   os.Getenv("LIVE_BINANCE_BASE_URL"),
-		}, nil
-	}
-
-	return &Config{
-		APIKey:    os.Getenv("TEST_BINANCE_API_KEY"),
-		SecretKey: os.Getenv("TEST_BINANCE_SECRET_KEY"),
-		BaseURL:   os.Getenv("TEST_BINANCE_BASE_URL"),
-	}, nil
-}
-
-func signRequest(secretKey string, queryParams url.Values) string {
-
-	queryString := queryParams.Encode()
-
-	h := hmac.New(sha256.New, []byte(secretKey))
-	h.Write([]byte(queryString))
-
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-func getAccountInfo(config *Config) ([]byte, error) {
-	endpoint := "/api/v3/openOrders"
-	queryParams := url.Values{}
-
-	queryParams.Set("timestamp", strconv.FormatInt(time.Now().UnixMilli(), 10))
-
-	signature := signRequest(config.SecretKey, queryParams)
-	queryParams.Set("signature", signature)
-
-	fullURL := config.BaseURL + endpoint + "?" + queryParams.Encode()
-
-	req, err := http.NewRequest("GET", fullURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w\n", err)
-	}
-
-	req.Header.Set("X-MBX-APIKEY", config.APIKey)
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w\n", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w\n", err)
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("HTTP error %d: %s\n", resp.StatusCode, string(body))
-	}
-	return body, nil
-}
-
-func BuildPriceMap(prices []TickerPrice) (map[string]string, error) {
+func BuildPriceMap(prices []models.TickerPrice) (map[string]string, error) {
 	if len(prices) == 0 {
 		return nil, fmt.Errorf("input price list is empty")
 	}
@@ -128,7 +41,7 @@ func FetchBinanceDataWithErrors(url string) ([]byte, error) {
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		var apiError errorResponse
+		var apiError models.ErrorResponse
 		if err := json.Unmarshal(body, &apiError); err == nil && apiError.Msg != "" {
 			return nil, fmt.Errorf("API error %d: %s", apiError.Code, apiError.Msg)
 		}
@@ -163,20 +76,19 @@ func FetchBinanceDataWithRetry(url string, maxRetries int, retryDelay time.Durat
 
 func main() {
 
-	config, err := loadConfig()
+	cfg, err := config.Load()
 	if err != nil {
-		fmt.Println("Error loading configuration:", err)
-		return
-	}
-	fmt.Printf("Connected to %s environment\n", os.Getenv("BINANCE_ENV"))
-
-	body, err := getAccountInfo(config)
-	if err != nil {
-		fmt.Println("Error getting account info:\n", err)
-		return
+		panic(err)
 	}
 
-	fmt.Println("Account Info:\n", string(body))
+	client := binance.NewClient(cfg.APIKey, cfg.SecretKey, cfg.BaseURL)
+
+	accountInfo, err := client.GetAccountInfo()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Account Info:\n", string(accountInfo))
 
 	//url := "https://api.binance.com/api/v3/ticker/price"
 	//url := "https://httpbin.org/status/500"
