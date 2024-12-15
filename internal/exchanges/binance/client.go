@@ -1,6 +1,7 @@
 package binance
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gopher-coin/crypto-trade/internal/utils"
+	"github.com/gopher-coin/crypto-trade/pkg/models"
 )
 
 type Client struct {
@@ -25,8 +27,8 @@ func NewClient(apiKey, secretKey, baseURL string) *Client {
 	}
 }
 
-func (c *Client) GetAccountInfo() ([]byte, error) {
-	endpoint := "/api/v3/openOrders"
+func (c *Client) GetAccountInfo() ([]models.Balance, error) {
+	endpoint := "/api/v3/account"
 	queryParams := url.Values{}
 
 	queryParams.Set("timestamp", strconv.FormatInt(time.Now().UnixMilli(), 10))
@@ -42,6 +44,7 @@ func (c *Client) GetAccountInfo() ([]byte, error) {
 	}
 
 	req.Header.Set("X-MBX-APIKEY", c.APIKey)
+
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -58,5 +61,12 @@ func (c *Client) GetAccountInfo() ([]byte, error) {
 		return nil, fmt.Errorf("HTTP error %d: %s\n", resp.StatusCode, string(body))
 	}
 
-	return body, nil
+	var accountResponse struct {
+		Balances []models.Balance `json:"balances"`
+	}
+	if err := json.Unmarshal(body, &accountResponse); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return accountResponse.Balances, nil
 }

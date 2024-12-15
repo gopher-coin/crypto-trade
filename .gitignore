@@ -4,6 +4,9 @@
 .idea/
 *.iml
 
+# VSC specific 
+.vscode/
+
 # OS generated files
 .DS_Store
 

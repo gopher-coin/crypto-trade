@@ -83,41 +83,22 @@ func main() {
 
 	client := binance.NewClient(cfg.APIKey, cfg.SecretKey, cfg.BaseURL)
 
-	accountInfo, err := client.GetAccountInfo()
+	balances, err := client.GetAccountInfo()
 	if err != nil {
-		panic(err)
+		fmt.Println("Error getting account info:", err)
+		return
 	}
 
-	fmt.Println("Account Info:\n", string(accountInfo))
+	for _, balance := range balances {
+		fmt.Printf("Asset: %s, Free: %s, Locked: %s\n", balance.Asset, balance.Free, balance.Locked)
+	}
 
-	//url := "https://api.binance.com/api/v3/ticker/price"
-	//url := "https://httpbin.org/status/500"
-
-	// body, err := FetchBinanceDataWithRetry(url, 3, 2*time.Second)
+	// err = client.CreateTestOrder("BTCUSDT", "BUY", "LIMIT", "0.001", "90000")
 	// if err != nil {
-	// 	fmt.Println("Error:", err)
+	// 	fmt.Println("Error creating test order:", err)
 	// 	return
 	// }
 
-	// fmt.Println("Response body:", string(body[:200]))
+	// fmt.Println("Test order executed successfully!")
 
-	// var prices []TickerPrice
-	// if err := json.Unmarshal(body, &prices); err != nil {
-	// 	fmt.Printf("Failed to decode prices: %v\n", err)
-	// 	return
-	// }
-
-	// priceMap, err := BuildPriceMap(prices)
-	// if err != nil {
-	// 	fmt.Println("error buiding price map:", err)
-	// 	return
-	// }
-
-	// symbol := "BTCUSDT"
-	// price, err := GetTickerPrice(priceMap, symbol)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// } else {
-	// 	fmt.Printf("Price for %s: %s\n", symbol, price)
-	// }
 }
