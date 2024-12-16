@@ -6,10 +6,11 @@ type TickerPrice struct {
 }
 
 type OHLC struct {
-	Symbol    string  // Name of the trading pair
-	Open      float64 // Initial price (Open)
-	High      float64 // Highest price
-	Low       float64 // Lowest price
-	Close     float64 // Final price (Close)
-	Timestamp int64   // Time
+	Symbol    string // Name of the trading pair
+	Open      string // Initial price (Open)
+	High      string // Highest price
+	Low       string // Lowest price
+	Close     string // Final price (Close)
+	Volume    string // Trading volume for a certain period
+	Timestamp int64  // Time
 }

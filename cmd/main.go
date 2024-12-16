@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
+
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gopher-coin/crypto-trade/internal/config"
+	"github.com/gopher-coin/crypto-trade/internal/db"
+	"github.com/gopher-coin/crypto-trade/internal/db/queries"
 	"github.com/gopher-coin/crypto-trade/internal/exchanges/binance"
 	"github.com/gopher-coin/crypto-trade/pkg/models"
 )
@@ -81,17 +86,60 @@ func main() {
 		panic(err)
 	}
 
+	err = db.ConnectDB()
+	if err != nil {
+		log.Fatalf("Database connection failed: %v\n", err)
+	}
+	defer db.CloseDB()
+
 	client := binance.NewClient(cfg.APIKey, cfg.SecretKey, cfg.BaseURL)
 
-	balances, err := client.GetAccountInfo()
-	if err != nil {
-		fmt.Println("Error getting account info:", err)
-		return
-	}
+	intervals := []string{"1m", "5m", "15m", "1h", "1d"}
+	symbol := "ETHUSDT"
 
-	for _, balance := range balances {
-		fmt.Printf("Asset: %s, Free: %s, Locked: %s\n", balance.Asset, balance.Free, balance.Locked)
+	for _, interval := range intervals {
+		klines, err := client.GetKlines(symbol, interval, 10)
+		if err != nil {
+			log.Printf("Failed to fetch klines for %s %s: %v\n", symbol, interval, err)
+			continue
+		}
+		for _, kline := range klines {
+			ohlc := models.OHLC{
+				Symbol:    symbol,
+				Open:      kline.Open,
+				High:      kline.High,
+				Low:       kline.Low,
+				Close:     kline.Close,
+				Volume:    kline.Volume,
+				Timestamp: kline.OpenTime,
+			}
+			err := queries.OHLCQueries.InsertOHLC(context.Background(), ohlc)
+			if err != nil {
+				log.Printf("Failed to insert OHLC data: %v", err)
+			}
+		}
+		fmt.Printf("Inserted OHLC data for interval: %s\n", interval)
 	}
+	fmt.Println("OHLC data fetching and saving complete.")
+
+	// err := db.ConnectDB()
+	// if err != nil {
+	// 	log.Fatalf("Database connection failed: %v\n", err)
+	// }
+	// defer db.CloseDB()
+	// log.Println("Aplication is running...")
+
+	// client := binance.NewClient(cfg.APIKey, cfg.SecretKey, cfg.BaseURL)
+
+	// balances, err := client.GetAccountInfo()
+	// if err != nil {
+	// 	fmt.Println("Error getting account info:", err)
+	// 	return
+	// }
+
+	// for _, balance := range balances {
+	// 	fmt.Printf("Asset: %s, Free: %s, Locked: %s\n", balance.Asset, balance.Free, balance.Locked)
+	// }
 
 	// err = client.CreateTestOrder("BTCUSDT", "BUY", "LIMIT", "0.001", "90000")
 	// if err != nil {

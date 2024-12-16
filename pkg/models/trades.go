@@ -7,4 +7,5 @@ type Trade struct {
 	Quantity  float64 // Number of units
 	Price     float64 // Cost per unit
 	Timestamp int64   // Transaction time
+	Total     float64 // Total = Price * Quantity
 }
