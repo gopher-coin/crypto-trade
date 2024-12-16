@@ -103,6 +103,8 @@ func main() {
 			log.Printf("Failed to fetch klines for %s %s: %v\n", symbol, interval, err)
 			continue
 		}
+		ohlcQueries := &queries.OHLCQueries{Pool: db.Pool}
+
 		for _, kline := range klines {
 			ohlc := models.OHLC{
 				Symbol:    symbol,
@@ -113,7 +115,7 @@ func main() {
 				Volume:    kline.Volume,
 				Timestamp: kline.OpenTime,
 			}
-			err := queries.OHLCQueries.InsertOHLC(context.Background(), ohlc)
+			err := ohlcQueries.InsertOHLC(context.Background(), ohlc)
 			if err != nil {
 				log.Printf("Failed to insert OHLC data: %v", err)
 			}
